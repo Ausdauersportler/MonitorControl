@@ -11,12 +11,27 @@ class AppleDisplay: Display {
     super.init(identifier, name: name, vendorNumber: vendorNumber, modelNumber: modelNumber, serialNumber: serialNumber, isVirtual: isVirtual, isDummy: isDummy)
   }
 
+  func updateApplePwmValue(brightness: Float) {
+    // hard coded URL 
+    let host = "http://imacpwm.local/light/internaldisplay/turn_on?brightness="
+  
+    let new_brightness = String(describing: brightness*255)
+    let url = URL(string: host+new_brightness)
+    os_log("Pushing slider and reporting delta for Apple display %{public}@", type: .info, String(describing: url))
+    let task = URLSession.shared.dataTask(with: url! as URL) { data, response, error in
+      guard let data = data, error == nil else { return }
+      print(NSString(data: data, encoding: String.Encoding.utf8.rawValue) ?? "")
+      }
+      task.resume()
+  }
+
   public func getAppleBrightness() -> Float {
     guard !self.isDummy else {
       return 1
     }
     var brightness: Float = 0
     DisplayServicesGetBrightness(self.identifier, &brightness)
+    // Could we blindly assume the brightness stored in the ESP32 and the NVRAM variable is the same?
     return brightness
   }
 
@@ -26,6 +41,8 @@ class AppleDisplay: Display {
     }
     _ = self.displayQueue.sync {
       DisplayServicesSetBrightness(self.identifier, value)
+      // REST API call to set the brightness via ESP32 
+      updateApplePwmValue(brightness: value)
     }
   }
 
@@ -76,6 +93,9 @@ class AppleDisplay: Display {
       if let sliderHandler = self.sliderHandler[.brightness] {
         sliderHandler.setValue(newValue, displayID: self.identifier)
       }
+      // update ESP32, too - obviously the Apple key settings are only reflected into the
+      // app slider settings assuming the brightness will be controlled via Apple hardware
+      updateApplePwmValue(brightness: newValue)
       return newValue - oldValue
     }
     return 0
